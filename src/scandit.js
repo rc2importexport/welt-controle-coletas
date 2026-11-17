@@ -14,7 +14,7 @@ export async function iniciarLeitor(elemento, licenca, aoLer) {
   let camera;
   let captura;
   try {
-    contexto = await DataCaptureContext.forLicenseKey(licenca);
+    contexto = await DataCaptureContext.create();
     const view = await DataCaptureView.forContext(contexto);
     view.connectToElement(elemento);
     const settings = new BarcodeCaptureSettings();
