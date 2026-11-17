@@ -1,4 +1,6 @@
+
 name: Compilar leitor Scandit
+
 on:
   push:
     branches: [main]
@@ -7,24 +9,46 @@ on:
       - 'package.json'
       - '.github/workflows/build-scandit.yml'
   workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
-      - run: npm run build
-      - name: Salvar arquivo compilado no repositório
+
+      - name: Instalar dependências
+        run: npm install --no-audit --no-fund
+
+      - name: Compilar leitor
+        run: npm run build
+
+      - name: Copiar arquivos auxiliares Scandit
+        run: |
+          mkdir -p assets/sdc-lib
+
+          cp -R node_modules/@scandit/web-datacapture-core/sdc-lib/. assets/sdc-lib/
+
+          cp -R node_modules/@scandit/web-datacapture-barcode/sdc-lib/. assets/sdc-lib/
+
+          echo "Arquivos auxiliares copiados:"
+          ls -lah assets/sdc-lib/
+
+      - name: Publicar arquivos compilados
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add assets/scandit.js
+
+          git add assets/scandit.js assets/sdc-lib/
+
           if ! git diff --cached --quiet; then
-            git commit -m 'Build Scandit reader'
+            git commit -m 'Build Scandit with SDK assets'
             git push
           fi
