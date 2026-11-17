@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WELT | Controle de Coletas</title>
+<title>WELT | Controle de Coletas — Leitura validada</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 *{box-sizing:border-box}body{margin:0;padding:18px;background:#f3f6fa;color:#203044;font:15px Arial,sans-serif}main{max-width:580px;margin:auto}header{background:#143d75;color:white;border-radius:13px;padding:20px;margin-bottom:15px}h1{margin:0;font-size:30px;letter-spacing:2px}header p{margin:5px 0 0;color:#dce8f8}.card{background:white;padding:18px;border-radius:13px;margin-bottom:14px;box-shadow:0 1px 5px #152b4b12}h2{font-size:19px;margin:0 0 15px}label{display:block;font-weight:bold;margin:13px 0 5px}input{width:100%;padding:13px;border:1px solid #cbd4e0;border-radius:8px;font-size:16px}button{width:100%;border:0;border-radius:9px;padding:13px;margin-top:10px;background:#143d75;color:white;font-size:15px;font-weight:bold;cursor:pointer}button.secondary{background:#e7ecf3;color:#203044}button:disabled{opacity:.5;cursor:wait}.hidden{display:none!important}.hint{font-size:12px;color:#667587;line-height:1.5}.status{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.count{font-size:40px;font-weight:bold;color:#143d75}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center}.item{border-bottom:1px solid #e8edf3;padding:12px 0}.item small{color:#657386}.item button{width:auto;padding:8px 12px;float:right;margin:0}.item:after{content:'';display:block;clear:both}canvas{width:100%;height:160px;touch-action:none;border:1px solid #cbd4e0;border-radius:8px;background:white}#reader{margin-top:12px;overflow:hidden}#reader video{max-width:100%}
@@ -85,9 +85,15 @@ function adicionarManual(){consultar(el('chaveManual').value)}
 function renderizar(){el('totalNotas').textContent=notas.length;el('totalVolumes').textContent=notas.reduce((s,n)=>s+n.volumes,0);const lista=el('listaNotas');lista.replaceChildren();if(!notas.length){lista.innerHTML='<p class="hint">Nenhuma nota adicionada.</p>';return}notas.forEach((n,i)=>{const d=document.createElement('div');d.className='item';const b=document.createElement('button');b.className='secondary';b.textContent='Remover';b.onclick=()=>{notas.splice(i,1);renderizar()};const t=document.createElement('div');t.textContent='NF '+n.numero+' — '+n.cliente;const small=document.createElement('small');small.textContent=n.volumes+' volume(s) · '+n.chave;d.append(b,t,small);lista.append(d)})}
 let ultimaLeituraInvalida = '';
 let ultimoAvisoLeitura = 0;
+let candidataChave = '';
+let confirmacoesChave = 0;
+let leituraConcluida = false;
 async function abrirCamera(){
   if(scanner||iniciando||fechando)return;
   iniciando=true;
+  leituraConcluida=false;
+  candidataChave='';
+  confirmacoesChave=0;
   el('btnCamera').disabled=true;
   try{
     if(typeof Html5Qrcode==='undefined')throw Error('Biblioteca da câmera indisponível.');
@@ -97,47 +103,49 @@ async function abrirCamera(){
       useBarCodeDetectorIfSupported:true
     });
     const aoLer=(texto)=>{
+      if(leituraConcluida||fechando)return;
       const chave=extrairChave(texto);
       if(/^\d{44}$/.test(chave)){
-        mostrarChaveLida(chave,chaveNFeValida(chave)?'Dígito verificador correto. Consultando o XML...':'Dígito verificador incorreto. A câmera pode ter confundido um número; confira a chave impressa.');
-        if(!chaveNFeValida(chave)){status('A leitura gerou 44 dígitos, mas a chave é inválida. Confira os números antes de consultar.');fecharCamera();return}
-        // Evita múltiplas consultas quando o mesmo código permanece diante da câmera.
-        if(fechando)return;
-        status('Chave de 44 dígitos reconhecida. Consultando XML...');
+        if(!chaveNFeValida(chave)){
+          candidataChave='';confirmacoesChave=0;
+          mostrarChaveLida(chave,'Leitura inválida: dígito verificador não confere. A câmera continuará tentando.');
+          status('Leitura incorreta detectada. Mantenha a nota firme e enquadre todas as barras; a câmera continuará tentando.');
+          return;
+        }
+        if(chave===candidataChave){confirmacoesChave++}else{candidataChave=chave;confirmacoesChave=1}
+        mostrarChaveLida(chave,'Chave válida. Conferência automática: '+Math.min(confirmacoesChave,2)+'/2 leituras iguais.');
+        if(confirmacoesChave<2){status('Chave válida reconhecida. Confirmando uma segunda leitura...');return}
+        leituraConcluida=true;
+        status('Duas leituras iguais e dígito verificador correto. Consultando XML...');
         consultar(chave);
         fecharCamera();
       }else{
+        candidataChave='';confirmacoesChave=0;
         const agora=Date.now();
         if(texto!==ultimaLeituraInvalida||agora-ultimoAvisoLeitura>5000){
-          ultimaLeituraInvalida=texto;
-          ultimoAvisoLeitura=agora;
-          status('Código reconhecido, mas não é uma chave de DANFE com 44 dígitos ('+chave.length+' dígitos). Aponte para o código principal da nota.');
+          ultimaLeituraInvalida=texto;ultimoAvisoLeitura=agora;
+          status('Código reconhecido, mas não tem 44 dígitos ('+chave.length+'). Centralize o código principal da DANFE.');
         }
       }
     };
     const opcoes={
-      fps:18,
-      qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.96)),height:Math.max(1,Math.min(110,Math.floor(h*.35)))}),
+      fps:15,
+      qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.96)),height:Math.max(1,Math.min(120,Math.floor(h*.35)))}),
       disableFlip:true,
       videoConstraints:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}
     };
-    try{
-      await scanner.start({facingMode:'environment'},opcoes,aoLer,()=>{});
-    }catch(primeiroErro){
-      // Alguns iPhones não aceitam a resolução solicitada: tenta novamente sem restrições.
+    try{await scanner.start({facingMode:'environment'},opcoes,aoLer,()=>{})}
+    catch(primeiroErro){
       await scanner.start({facingMode:'environment'},
-        {fps:12,qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.94)),height:Math.max(1,Math.min(110,Math.floor(h*.35)))})},
+        {fps:12,qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.94)),height:Math.max(1,Math.min(120,Math.floor(h*.35)))})},
         aoLer,()=>{});
     }
     el('btnFechar').classList.remove('hidden');
-    status('Câmera aberta. Centralize o código de barras inteiro na faixa horizontal, incluindo as duas pontas. Evite reflexos.');
+    status('Câmera aberta. Enquadre o código de barras inteiro. O sistema só consulta após duas leituras iguais e válidas.');
   }catch(e){
     status('Erro ao abrir câmera: '+(e.message||e));
     if(scanner){try{await scanner.clear()}catch(_){}scanner=null}
-  }finally{
-    iniciando=false;
-    el('btnCamera').disabled=false;
-  }
+  }finally{iniciando=false;el('btnCamera').disabled=false}
 }
 async function fecharCamera(){if(!scanner||fechando)return;fechando=true;try{await scanner.stop();await scanner.clear()}catch(e){}finally{scanner=null;fechando=false;el('btnFechar').classList.add('hidden')}}
 async function abrirFinalizacao(){if(!el('transportadora').value.trim()){alert('Informe a transportadora.');return}if(!notas.length){alert('Adicione pelo menos uma nota fiscal.');return}if(scanner)await fecharCamera();el('resumoFinal').textContent=el('transportadora').value.trim()+' · '+notas.length+' nota(s) · '+notas.reduce((s,n)=>s+n.volumes,0)+' volume(s)';el('listaFinal').replaceChildren();notas.forEach(n=>{const p=document.createElement('p');p.textContent='NF '+n.numero+' — '+n.cliente+' — '+n.volumes+' volume(s)';el('listaFinal').append(p)});el('etapaLeitura').classList.add('hidden');el('etapaFinal').classList.remove('hidden');configurarCanvas();window.scrollTo(0,0)}
