@@ -16,7 +16,7 @@
 <label for="chaveManual">Chave de acesso da DANFE (44 dígitos)</label><input id="chaveManual" placeholder="Digite ou escaneie a chave" inputmode="numeric" maxlength="60" autocomplete="off">
 <button type="button" onclick="adicionarManual()">Consultar nota fiscal</button>
 <button type="button" class="secondary" id="btnCamera" onclick="abrirCamera()">Abrir câmera para ler DANFE</button><div id="reader"></div><button type="button" class="secondary hidden" id="btnFechar" onclick="fecharCamera()">Fechar câmera</button>
-<p class="status" id="statusLeitura" aria-live="polite">Aguardando leitura.</p><p class="hint">A consulta utiliza o índice dos XMLs no Google Drive. Se uma nota não for encontrada, ela não será incluída automaticamente.</p></div>
+<div id="painelLeitura" class="card hidden" style="background:#edf3fb;border:1px solid #b7c9e1;padding:12px;margin-top:12px"><strong>Chave reconhecida pela câmera</strong><p id="chaveReconhecida" style="overflow-wrap:anywhere;letter-spacing:.3px;line-height:1.6"></p><p id="resultadoLeitura" class="hint"></p><button type="button" class="secondary" onclick="adicionarManual()">Consultar esta chave novamente</button></div><p class="status" id="statusLeitura" aria-live="polite">Aguardando leitura.</p><p class="hint">A consulta utiliza o índice dos XMLs no Google Drive. Se uma nota não for encontrada, ela não será incluída automaticamente.</p></div>
 <div class="card"><h2>Notas registradas</h2><div id="listaNotas"><p class="hint">Nenhuma nota adicionada.</p></div><button type="button" onclick="abrirFinalizacao()">Conferir e finalizar coleta</button></div>
 </section>
 <section id="etapaFinal" class="hidden"><div class="card"><h2>Conferência da coleta</h2><p id="resumoFinal"></p><div id="listaFinal"></div><button type="button" class="secondary" onclick="voltarLeitura()">Voltar à leitura</button></div>
@@ -43,6 +43,20 @@ const el=id=>document.getElementById(id);
 function normalizarChave(s){return String(s||'').replace(/\D/g,'')}
 function status(s){el('statusLeitura').textContent=s}
 function extrairChave(texto){const s=String(texto||'').trim();const m=s.match(/(?:^|\D)(\d{44})(?:\D|$)/);return m?m[1]:normalizarChave(s)}
+// NF-e: valida o dígito verificador (módulo 11, pesos 2 a 9 da direita para a esquerda).
+function chaveNFeValida(chave){
+  if(!/^\d{44}$/.test(chave))return false;
+  let soma=0,peso=2;
+  for(let i=42;i>=0;i--){soma+=Number(chave[i])*peso;peso=peso===9?2:peso+1}
+  const resto=soma%11, dv=resto<2?0:11-resto;
+  return dv===Number(chave[43]);
+}
+function mostrarChaveLida(chave,observacao){
+  el('chaveManual').value=chave;
+  el('chaveReconhecida').textContent=chave.replace(/(\d{4})(?=\d)/g,'$1 ').trim();
+  el('resultadoLeitura').textContent=observacao;
+  el('painelLeitura').classList.remove('hidden');
+}
 function consultar(chave){
   chave=extrairChave(chave);
   if(!/^\d{44}$/.test(chave)){status('A chave da DANFE deve ter exatamente 44 dígitos.');return}
@@ -58,7 +72,7 @@ function consultar(chave){
     if(finalizado)return;
     terminar();
     if(!r||r.erro){status('Erro na consulta: '+(r&&r.erro||'Resposta inválida.'));return}
-    if(!r.encontrada){status('XML não encontrado no índice. Atualize os XMLs antes de tentar novamente.');return}
+    if(!r.encontrada){status('XML não encontrado para a chave exibida acima. Compare os 44 dígitos com a DANFE; se estiverem corretos, confira o índice dos XMLs.');return}
     if(r.volumes===null||r.volumes===undefined||!Number.isInteger(Number(r.volumes))||Number(r.volumes)<1){status('XML localizado, mas a quantidade de volumes está ausente ou inválida.');return}
     notas.push({chave,numero:String(r.numero||''),serie:String(r.serie||''),cliente:String(r.cliente||''),volumes:Number(r.volumes)});
     renderizar();status('NF '+r.numero+' adicionada com '+r.volumes+' volume(s).');el('chaveManual').value='';
@@ -85,6 +99,8 @@ async function abrirCamera(){
     const aoLer=(texto)=>{
       const chave=extrairChave(texto);
       if(/^\d{44}$/.test(chave)){
+        mostrarChaveLida(chave,chaveNFeValida(chave)?'Dígito verificador correto. Consultando o XML...':'Dígito verificador incorreto. A câmera pode ter confundido um número; confira a chave impressa.');
+        if(!chaveNFeValida(chave)){status('A leitura gerou 44 dígitos, mas a chave é inválida. Confira os números antes de consultar.');fecharCamera();return}
         // Evita múltiplas consultas quando o mesmo código permanece diante da câmera.
         if(fechando)return;
         status('Chave de 44 dígitos reconhecida. Consultando XML...');
