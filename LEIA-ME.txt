@@ -1,0 +1,9 @@
+WELT — Scandit com compilação GitHub Actions
+
+1. Extraia este ZIP no computador.
+2. No repositório rc2importexport/welt-controle-coletas, envie os arquivos index.html, package.json, src/scandit.js e .github/workflows/build-scandit.yml mantendo as pastas.
+3. Em Actions, acompanhe "Compilar leitor Scandit". A ação deve gerar assets/scandit.js automaticamente.
+4. Se falhar na etapa de git push, configure Settings > Actions > General > Workflow permissions > Read and write permissions.
+5. Após o build e a publicação do GitHub Pages, abra https://rc2importexport.github.io/welt-controle-coletas/?v=5 e teste no Safari.
+
+ATENÇÃO: esta integração não foi executada com o SDK instalado neste ambiente; depende de teste real no GitHub. A licença não foi inserida nos arquivos.

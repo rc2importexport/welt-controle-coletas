@@ -1,0 +1,9 @@
+{
+  "name":"welt-scandit-reader",
+  "private":true,
+  "version":"1.0.0",
+  "type":"module",
+  "scripts":{"build":"esbuild src/scandit.js --bundle --format=esm --platform=browser --target=es2020 --outfile=assets/scandit.js --minify"},
+  "dependencies":{"@scandit/web-datacapture-core":"7.6.0","@scandit/web-datacapture-barcode":"7.6.0"},
+  "devDependencies":{"esbuild":"^0.25.0"}
+}
