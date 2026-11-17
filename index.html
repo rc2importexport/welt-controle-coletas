@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WELT | Controle de Coletas — Scandit (teste)</title>
+<title>WELT | Controle de Coletas — Scandit (correção de carregamento)</title>
 
 <style>
 *{box-sizing:border-box}body{margin:0;padding:18px;background:#f3f6fa;color:#203044;font:15px Arial,sans-serif}main{max-width:580px;margin:auto}header{background:#143d75;color:white;border-radius:13px;padding:20px;margin-bottom:15px}h1{margin:0;font-size:30px;letter-spacing:2px}header p{margin:5px 0 0;color:#dce8f8}.card{background:white;padding:18px;border-radius:13px;margin-bottom:14px;box-shadow:0 1px 5px #152b4b12}h2{font-size:19px;margin:0 0 15px}label{display:block;font-weight:bold;margin:13px 0 5px}input{width:100%;padding:13px;border:1px solid #cbd4e0;border-radius:8px;font-size:16px}button{width:100%;border:0;border-radius:9px;padding:13px;margin-top:10px;background:#143d75;color:white;font-size:15px;font-weight:bold;cursor:pointer}button.secondary{background:#e7ecf3;color:#203044}button:disabled{opacity:.5;cursor:wait}.hidden{display:none!important}.hint{font-size:12px;color:#667587;line-height:1.5}.status{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.count{font-size:40px;font-weight:bold;color:#143d75}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center}.item{border-bottom:1px solid #e8edf3;padding:12px 0}.item small{color:#657386}.item button{width:auto;padding:8px 12px;float:right;margin:0}.item:after{content:'';display:block;clear:both}canvas{width:100%;height:160px;touch-action:none;border:1px solid #cbd4e0;border-radius:8px;background:white}#reader{margin-top:12px;overflow:hidden}#reader video{max-width:100%}
@@ -101,7 +101,13 @@ async function abrirCamera(){
       import('https://esm.sh/@scandit/web-datacapture-core@7.6.0?bundle'),
       import('https://esm.sh/@scandit/web-datacapture-barcode@7.6.0?bundle')
     ]);
-    await core.configure({licenseKey:chaveLicencaSessao,libraryLocation:'https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-core@7.6.0/sdc-lib/'});
+    // O SDK 7 exige informar os carregadores dos módulos usados.
+    if(typeof barcode.barcodeCaptureLoader!=='function')throw Error('O módulo de código de barras não disponibilizou barcodeCaptureLoader.');
+    await core.configure({
+      licenseKey:chaveLicencaSessao,
+      libraryLocation:'https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-core@7.6.0/sdc-lib/',
+      moduleLoaders:[barcode.barcodeCaptureLoader()]
+    });
     const context=await core.DataCaptureContext.forLicenseKey(chaveLicencaSessao);
     const view=await core.DataCaptureView.forContext(context);
     view.connectToElement(el('reader'));
