@@ -2,8 +2,11 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WELT | Controle de Coletas — Scandit (correção de carregamento)</title>
+<title>WELT | Controle de Coletas — Scandit (diagnóstico e carregamento)</title>
 
+<script type="importmap">
+{"imports":{"@scandit/web-datacapture-core":"https://esm.sh/@scandit/web-datacapture-core@7.6.0?bundle"}}
+</script>
 <style>
 *{box-sizing:border-box}body{margin:0;padding:18px;background:#f3f6fa;color:#203044;font:15px Arial,sans-serif}main{max-width:580px;margin:auto}header{background:#143d75;color:white;border-radius:13px;padding:20px;margin-bottom:15px}h1{margin:0;font-size:30px;letter-spacing:2px}header p{margin:5px 0 0;color:#dce8f8}.card{background:white;padding:18px;border-radius:13px;margin-bottom:14px;box-shadow:0 1px 5px #152b4b12}h2{font-size:19px;margin:0 0 15px}label{display:block;font-weight:bold;margin:13px 0 5px}input{width:100%;padding:13px;border:1px solid #cbd4e0;border-radius:8px;font-size:16px}button{width:100%;border:0;border-radius:9px;padding:13px;margin-top:10px;background:#143d75;color:white;font-size:15px;font-weight:bold;cursor:pointer}button.secondary{background:#e7ecf3;color:#203044}button:disabled{opacity:.5;cursor:wait}.hidden{display:none!important}.hint{font-size:12px;color:#667587;line-height:1.5}.status{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.count{font-size:40px;font-weight:bold;color:#143d75}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center}.item{border-bottom:1px solid #e8edf3;padding:12px 0}.item small{color:#657386}.item button{width:auto;padding:8px 12px;float:right;margin:0}.item:after{content:'';display:block;clear:both}canvas{width:100%;height:160px;touch-action:none;border:1px solid #cbd4e0;border-radius:8px;background:white}#reader{margin-top:12px;overflow:hidden}#reader video{max-width:100%}
 </style>
@@ -15,7 +18,7 @@
 <div class="card"><label for="transportadora">Transportadora *</label><input id="transportadora" placeholder="Digite o nome da transportadora" autocomplete="organization" maxlength="120">
 <label for="chaveManual">Chave de acesso da DANFE (44 dígitos)</label><input id="chaveManual" placeholder="Digite ou escaneie a chave" inputmode="numeric" maxlength="60" autocomplete="off">
 <button type="button" onclick="adicionarManual()">Consultar nota fiscal</button>
-<button type="button" class="secondary" id="btnCamera" onclick="abrirCamera()">Abrir leitor profissional Scandit</button><div id="reader" style="height:300px;position:relative"></div><p class="hint">Na primeira utilização, informe sua licença de avaliação Scandit. A chave ficará somente na memória desta aba, sem ser enviada ao GitHub.</p><button type="button" class="secondary hidden" id="btnFechar" onclick="fecharCamera()">Fechar câmera</button>
+<button type="button" class="secondary" id="btnCamera" onclick="abrirCamera()">Abrir leitor profissional Scandit</button><div id="reader" style="min-height:0;position:relative"></div><p class="hint">Na primeira utilização, informe sua licença de avaliação Scandit. A chave ficará somente na memória desta aba, sem ser enviada ao GitHub.</p><button type="button" class="secondary hidden" id="btnFechar" onclick="fecharCamera()">Fechar câmera</button>
 <div id="painelLeitura" class="card hidden" style="background:#edf3fb;border:1px solid #b7c9e1;padding:12px;margin-top:12px"><strong>Chave reconhecida pela câmera</strong><p id="chaveReconhecida" style="overflow-wrap:anywhere;letter-spacing:.3px;line-height:1.6"></p><p id="resultadoLeitura" class="hint"></p><button type="button" class="secondary" onclick="adicionarManual()">Consultar esta chave novamente</button></div><p class="status" id="statusLeitura" aria-live="polite">Aguardando leitura.</p><p class="hint">A consulta utiliza o índice dos XMLs no Google Drive. Se uma nota não for encontrada, ela não será incluída automaticamente.</p></div>
 <div class="card"><h2>Notas registradas</h2><div id="listaNotas"><p class="hint">Nenhuma nota adicionada.</p></div><button type="button" onclick="abrirFinalizacao()">Conferir e finalizar coleta</button></div>
 </section>
@@ -86,6 +89,18 @@ function renderizar(){el('totalNotas').textContent=notas.length;el('totalVolumes
 let leituraConcluida=false;
 let scanditSessao=null;
 let chaveLicencaSessao='';
+let etapaScandit='início';
+function detalharErro(e){
+  const partes=[];
+  if(e?.name)partes.push(e.name);
+  if(e?.message)partes.push(e.message);
+  if(e?.code)partes.push('Código: '+e.code);
+  if(e?.cause)partes.push('Causa: '+detalharErro(e.cause));
+  if(e?.stack)partes.push('Pilha: '+String(e.stack).slice(0,700));
+  if(!partes.length){try{partes.push(JSON.stringify(e,Object.getOwnPropertyNames(e)))}catch(_){partes.push(String(e))}}
+  return partes.join(' | ').slice(0,1300);
+}
+
 async function abrirCamera(){
   if(iniciando||fechando||scanditSessao)return;
   iniciando=true;leituraConcluida=false;el('btnCamera').disabled=true;
@@ -95,24 +110,28 @@ async function abrirCamera(){
       if(!licenca){status('Leitura cancelada: licença não informada.');return}
       chaveLicencaSessao=licenca.trim();
     }
-    status('Carregando leitor profissional Scandit...');
+    etapaScandit='importação';status('Carregando leitor profissional Scandit...');
     // Módulos ESM públicos; o código e a licença permanecem separados.
     const [core,barcode]=await Promise.all([
       import('https://esm.sh/@scandit/web-datacapture-core@7.6.0?bundle'),
-      import('https://esm.sh/@scandit/web-datacapture-barcode@7.6.0?bundle')
+      import('https://esm.sh/@scandit/web-datacapture-barcode@7.6.0?external=@scandit/web-datacapture-core')
     ]);
     // O SDK 7 exige informar os carregadores dos módulos usados.
     if(typeof barcode.barcodeCaptureLoader!=='function')throw Error('O módulo de código de barras não disponibilizou barcodeCaptureLoader.');
+    etapaScandit='configure';
     await core.configure({
       licenseKey:chaveLicencaSessao,
       libraryLocation:'https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-core@7.6.0/sdc-lib/',
       moduleLoaders:[barcode.barcodeCaptureLoader()]
     });
+    etapaScandit='criação do contexto';
     const context=await core.DataCaptureContext.forLicenseKey(chaveLicencaSessao);
+    etapaScandit='criação da visualização';
     const view=await core.DataCaptureView.forContext(context);
     view.connectToElement(el('reader'));
     const settings=new barcode.BarcodeCaptureSettings();
     settings.enableSymbologies([barcode.Symbology.Code128]);
+    etapaScandit='captura de código de barras';
     const capture=await barcode.BarcodeCapture.forContext(context,settings);
     await barcode.BarcodeCaptureOverlay.withBarcodeCaptureForView(capture,view);
     const camera=core.Camera.default;
@@ -140,11 +159,12 @@ async function abrirCamera(){
     }};
     capture.addListener(listener);
     scanditSessao={core,context,view,capture,camera,listener};
+    etapaScandit='ativação da câmera';
     await camera.switchToDesiredState(core.FrameSourceState.On);
     el('btnFechar').classList.remove('hidden');
     status('Leitor Scandit aberto. Aponte para o código de barras da DANFE.');
   }catch(e){
-    status('Não foi possível iniciar a Scandit: '+(e.message||String(e))+'. Confira a licença e a conexão.');
+    status('Falha na etapa '+etapaScandit+': '+detalharErro(e)+'\nEnvie uma captura desta mensagem para diagnóstico.');console.error('Scandit / '+etapaScandit,e);
     if(scanditSessao)await fecharCamera();
   }finally{iniciando=false;el('btnCamera').disabled=false}
 }
