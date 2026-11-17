@@ -1,1 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WELT | Controle de Coletas</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:18px;background:#f3f6fa;color:#203044;font:15px Arial,sans-serif}main{max-width:580px;margin:auto}header{background:#143d75;color:white;border-radius:13px;padding:20px;margin-bottom:15px}h1{margin:0;font-size:30px;letter-spacing:2px}header p{margin:5px 0 0;color:#dce8f8}.card{background:white;padding:18px;border-radius:13px;margin-bottom:14px;box-shadow:0 1px 5px #152b4b12}h2{font-size:19px;margin:0 0 15px}label{display:block;font-weight:bold;margin:13px 0 5px}input{width:100%;padding:13px;border:1px solid #cbd4e0;border-radius:8px;font-size:16px}button{width:100%;border:0;border-radius:9px;padding:13px;margin-top:10px;background:#143d75;color:white;font-size:15px;font-weight:bold;cursor:pointer}button.secondary{background:#e7ecf3;color:#203044}button:disabled{opacity:.5;cursor:wait}.hidden{display:none!important}.hint{font-size:12px;color:#667587;line-height:1.5}.status{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.count{font-size:40px;font-weight:bold;color:#143d75}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center}.item{border-bottom:1px solid #e8edf3;padding:12px 0}.item small{color:#657386}.item button{width:auto;padding:8px 12px;float:right;margin:0}.item:after{content:'';display:block;clear:both}canvas{width:100%;height:160px;touch-action:none;border:1px solid #cbd4e0;border-radius:8px;background:white}#reader{margin-top:12px;overflow:hidden}#reader video{max-width:100%}
+</style>
+</head>
+<body><main>
+<header><h1>WELT</h1><p>Controle de Coletas</p></header>
+<section id="etapaLeitura">
+<div class="card"><div class="grid"><div><div class="count" id="totalNotas">0</div><div>Notas fiscais</div></div><div><div class="count" id="totalVolumes">0</div><div>Volumes</div></div></div></div>
+<div class="card"><label for="transportadora">Transportadora *</label><input id="transportadora" placeholder="Digite o nome da transportadora" autocomplete="organization" maxlength="120">
+<label for="chaveManual">Chave de acesso da DANFE (44 dígitos)</label><input id="chaveManual" placeholder="Digite ou escaneie a chave" inputmode="numeric" maxlength="60" autocomplete="off">
+<button type="button" onclick="adicionarManual()">Consultar nota fiscal</button>
+<button type="button" class="secondary" id="btnCamera" onclick="abrirCamera()">Abrir câmera para ler DANFE</button><div id="reader"></div><button type="button" class="secondary hidden" id="btnFechar" onclick="fecharCamera()">Fechar câmera</button>
+<p class="status" id="statusLeitura" aria-live="polite">Aguardando leitura.</p><p class="hint">A consulta utiliza o índice dos XMLs no Google Drive. Se uma nota não for encontrada, ela não será incluída automaticamente.</p></div>
+<div class="card"><h2>Notas registradas</h2><div id="listaNotas"><p class="hint">Nenhuma nota adicionada.</p></div><button type="button" onclick="abrirFinalizacao()">Conferir e finalizar coleta</button></div>
+</section>
+<section id="etapaFinal" class="hidden"><div class="card"><h2>Conferência da coleta</h2><p id="resumoFinal"></p><div id="listaFinal"></div><button type="button" class="secondary" onclick="voltarLeitura()">Voltar à leitura</button></div>
+<div class="card"><h2>Responsável pela retirada</h2><label for="motorista">Nome completo do motorista *</label><input id="motorista" placeholder="Nome completo" autocomplete="name" maxlength="150">
+<label for="documento">CPF ou RG *</label><input id="documento" placeholder="Informe CPF ou RG" maxlength="35" autocomplete="off">
+<label for="placa">Placa do veículo *</label><input id="placa" placeholder="ABC1D23" maxlength="10" autocapitalize="characters" autocomplete="off" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+<label>Assinatura do motorista *</label><canvas id="assinatura"></canvas><button type="button" class="secondary" onclick="limparAssinatura()">Limpar assinatura</button><p class="hint">Assine com o dedo ou mouse. Todos os dados são obrigatórios.</p>
+<button type="button" id="btnFinalizar" onclick="enviarColeta()">Gerar e salvar comprovante PDF</button><p id="statusFinal" class="status" aria-live="polite"></p></div></section>
+</main>
+<form id="formEnvio" class="hidden" method="POST" action="https://script.google.com/macros/s/AKfycbwCUp6GujxoS0LfvPvrCXdaxZUQhp5mMnBSzBCDdxgu1ligJtkt9GJkFlKoSoq-e7m6/exec">
+<input type="hidden" id="envioTransportadora" name="transportadora">
+<input type="hidden" id="envioMotorista" name="motorista">
+<input type="hidden" id="envioDocumento" name="documento">
+<input type="hidden" id="envioPlaca" name="placa">
+<input type="hidden" id="envioAssinatura" name="assinatura">
+<input type="hidden" id="envioChaves" name="chaves">
+</form>
+
+<script>
+const API_WELT='https://script.google.com/macros/s/AKfycbwCUp6GujxoS0LfvPvrCXdaxZUQhp5mMnBSzBCDdxgu1ligJtkt9GJkFlKoSoq-e7m6/exec';
+const notas=[];let scanner=null,iniciando=false,fechando=false,assinou=false,desenhando=false,enviando=false;
+const canvas=document.getElementById('assinatura'),ctx=canvas.getContext('2d');
+const el=id=>document.getElementById(id);
+function normalizarChave(s){return String(s||'').replace(/\D/g,'')}
+function status(s){el('statusLeitura').textContent=s}
+function extrairChave(texto){const s=String(texto||'').trim();const m=s.match(/(?:^|\D)(\d{44})(?:\D|$)/);return m?m[1]:normalizarChave(s)}
+function consultar(chave){
+  chave=extrairChave(chave);
+  if(!/^\d{44}$/.test(chave)){status('A chave da DANFE deve ter exatamente 44 dígitos.');return}
+  if(notas.some(n=>n.chave===chave)){status('Esta nota já foi registrada.');return}
+  status('Consultando XML da nota...');
+  const callback='weltRetorno_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+  const script=document.createElement('script');
+  let finalizado=false;
+  const tempo=setTimeout(()=>terminar('A consulta demorou demais. Verifique a conexão e tente novamente.'),20000);
+  function limpar(){clearTimeout(tempo);delete window[callback];script.remove()}
+  function terminar(erro){if(finalizado)return;finalizado=true;limpar();if(erro)status(erro)}
+  window[callback]=function(r){
+    if(finalizado)return;
+    terminar();
+    if(!r||r.erro){status('Erro na consulta: '+(r&&r.erro||'Resposta inválida.'));return}
+    if(!r.encontrada){status('XML não encontrado no índice. Atualize os XMLs antes de tentar novamente.');return}
+    if(r.volumes===null||r.volumes===undefined||!Number.isInteger(Number(r.volumes))||Number(r.volumes)<1){status('XML localizado, mas a quantidade de volumes está ausente ou inválida.');return}
+    notas.push({chave,numero:String(r.numero||''),serie:String(r.serie||''),cliente:String(r.cliente||''),volumes:Number(r.volumes)});
+    renderizar();status('NF '+r.numero+' adicionada com '+r.volumes+' volume(s).');el('chaveManual').value='';
+  };
+  script.onerror=()=>terminar('Não foi possível consultar o Google Apps Script. Confira a implantação.');
+  script.src=API_WELT+'?acao=consulta&chave='+encodeURIComponent(chave)+'&callback='+encodeURIComponent(callback);
+  document.head.appendChild(script);
+}
+function adicionarManual(){consultar(el('chaveManual').value)}
+function renderizar(){el('totalNotas').textContent=notas.length;el('totalVolumes').textContent=notas.reduce((s,n)=>s+n.volumes,0);const lista=el('listaNotas');lista.replaceChildren();if(!notas.length){lista.innerHTML='<p class="hint">Nenhuma nota adicionada.</p>';return}notas.forEach((n,i)=>{const d=document.createElement('div');d.className='item';const b=document.createElement('button');b.className='secondary';b.textContent='Remover';b.onclick=()=>{notas.splice(i,1);renderizar()};const t=document.createElement('div');t.textContent='NF '+n.numero+' — '+n.cliente;const small=document.createElement('small');small.textContent=n.volumes+' volume(s) · '+n.chave;d.append(b,t,small);lista.append(d)})}
+async function abrirCamera(){if(scanner||iniciando||fechando)return;iniciando=true;el('btnCamera').disabled=true;try{if(typeof Html5Qrcode==='undefined')throw Error('Biblioteca da câmera indisponível.');scanner=new Html5Qrcode('reader',{formatsToSupport:[Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.ITF,Html5QrcodeSupportedFormats.CODE_39],verbose:false});await scanner.start({facingMode:'environment'},{fps:12,qrbox:(w,h)=>({width:Math.floor(w*.94),height:Math.min(Math.floor(h*.5),180)})},texto=>{const chave=extrairChave(texto);if(/^\d{44}$/.test(chave)){consultar(chave);fecharCamera()}},()=>{});el('btnFechar').classList.remove('hidden');status('Câmera aberta. Aponte para o código de barras da DANFE.')}catch(e){status('Erro ao abrir câmera: '+(e.message||e));if(scanner){try{await scanner.clear()}catch(_){}scanner=null}}finally{iniciando=false;el('btnCamera').disabled=false}}
+async function fecharCamera(){if(!scanner||fechando)return;fechando=true;try{await scanner.stop();await scanner.clear()}catch(e){}finally{scanner=null;fechando=false;el('btnFechar').classList.add('hidden')}}
+async function abrirFinalizacao(){if(!el('transportadora').value.trim()){alert('Informe a transportadora.');return}if(!notas.length){alert('Adicione pelo menos uma nota fiscal.');return}if(scanner)await fecharCamera();el('resumoFinal').textContent=el('transportadora').value.trim()+' · '+notas.length+' nota(s) · '+notas.reduce((s,n)=>s+n.volumes,0)+' volume(s)';el('listaFinal').replaceChildren();notas.forEach(n=>{const p=document.createElement('p');p.textContent='NF '+n.numero+' — '+n.cliente+' — '+n.volumes+' volume(s)';el('listaFinal').append(p)});el('etapaLeitura').classList.add('hidden');el('etapaFinal').classList.remove('hidden');configurarCanvas();window.scrollTo(0,0)}
+function voltarLeitura(){el('etapaFinal').classList.add('hidden');el('etapaLeitura').classList.remove('hidden');window.scrollTo(0,0)}
+function configurarCanvas(){const dpr=window.devicePixelRatio||1,w=canvas.getBoundingClientRect().width;canvas.width=Math.round(w*dpr);canvas.height=Math.round(160*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle='#203044';assinou=false;desenhando=false}
+function ponto(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
+canvas.addEventListener('pointerdown',e=>{desenhando=true;assinou=true;canvas.setPointerCapture(e.pointerId);const p=ponto(e);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+.1,p.y+.1);ctx.stroke()});canvas.addEventListener('pointermove',e=>{if(!desenhando)return;const p=ponto(e);ctx.lineTo(p.x,p.y);ctx.stroke()});canvas.addEventListener('pointerup',()=>desenhando=false);canvas.addEventListener('pointercancel',()=>desenhando=false);
+function limparAssinatura(){configurarCanvas()}
+function enviarColeta(){
+  if(enviando)return;
+  const motorista=el('motorista').value.trim(),documento=el('documento').value.trim(),placa=el('placa').value.trim().toUpperCase(),transportadora=el('transportadora').value.trim();
+  if(!transportadora||!notas.length||!motorista||!documento||!placa||!assinou){el('statusFinal').textContent='Preencha transportadora, nome, CPF ou RG, placa e assinatura; registre ao menos uma nota.';return}
+  if(!/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa)){el('statusFinal').textContent='Informe uma placa brasileira de 7 caracteres.';return}
+  if(!confirm('Confirma a retirada de '+notas.length+' nota(s) e '+notas.reduce((s,n)=>s+n.volumes,0)+' volume(s)?'))return;
+  enviando=true;el('btnFinalizar').disabled=true;el('statusFinal').textContent='Enviando coleta para gerar PDF...';
+  el('envioTransportadora').value=transportadora;
+  el('envioMotorista').value=motorista;
+  el('envioDocumento').value=documento;
+  el('envioPlaca').value=placa;
+  el('envioAssinatura').value=canvas.toDataURL('image/png');
+  el('envioChaves').value=JSON.stringify(notas.map(n=>n.chave));
+  el('formEnvio').submit();
+}
+</script></body></html>
 
