@@ -78,12 +78,7 @@ async function abrirCamera(){
   try{
     if(typeof Html5Qrcode==='undefined')throw Error('Biblioteca da câmera indisponível.');
     scanner=new Html5Qrcode('reader',{
-      formatsToSupport:[
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.ITF,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.CODABAR
-      ],
+      formatsToSupport:[Html5QrcodeSupportedFormats.CODE_128],
       verbose:false,
       useBarCodeDetectorIfSupported:true
     });
@@ -105,8 +100,8 @@ async function abrirCamera(){
       }
     };
     const opcoes={
-      fps:15,
-      qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.96)),height:Math.max(1,Math.min(Math.floor(h*.55),220))}),
+      fps:18,
+      qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.96)),height:Math.max(1,Math.min(110,Math.floor(h*.35)))}),
       disableFlip:true,
       videoConstraints:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}
     };
@@ -115,11 +110,11 @@ async function abrirCamera(){
     }catch(primeiroErro){
       // Alguns iPhones não aceitam a resolução solicitada: tenta novamente sem restrições.
       await scanner.start({facingMode:'environment'},
-        {fps:12,qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.94)),height:Math.max(1,Math.min(Math.floor(h*.5),180))})},
+        {fps:12,qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.94)),height:Math.max(1,Math.min(110,Math.floor(h*.35)))})},
         aoLer,()=>{});
     }
     el('btnFechar').classList.remove('hidden');
-    status('Câmera aberta. Aproxime a DANFE, mantenha todas as barras no quadro e evite reflexos.');
+    status('Câmera aberta. Centralize o código de barras inteiro na faixa horizontal, incluindo as duas pontas. Evite reflexos.');
   }catch(e){
     status('Erro ao abrir câmera: '+(e.message||e));
     if(scanner){try{await scanner.clear()}catch(_){}scanner=null}
