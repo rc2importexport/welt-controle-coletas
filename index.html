@@ -69,7 +69,65 @@ function consultar(chave){
 }
 function adicionarManual(){consultar(el('chaveManual').value)}
 function renderizar(){el('totalNotas').textContent=notas.length;el('totalVolumes').textContent=notas.reduce((s,n)=>s+n.volumes,0);const lista=el('listaNotas');lista.replaceChildren();if(!notas.length){lista.innerHTML='<p class="hint">Nenhuma nota adicionada.</p>';return}notas.forEach((n,i)=>{const d=document.createElement('div');d.className='item';const b=document.createElement('button');b.className='secondary';b.textContent='Remover';b.onclick=()=>{notas.splice(i,1);renderizar()};const t=document.createElement('div');t.textContent='NF '+n.numero+' — '+n.cliente;const small=document.createElement('small');small.textContent=n.volumes+' volume(s) · '+n.chave;d.append(b,t,small);lista.append(d)})}
-async function abrirCamera(){if(scanner||iniciando||fechando)return;iniciando=true;el('btnCamera').disabled=true;try{if(typeof Html5Qrcode==='undefined')throw Error('Biblioteca da câmera indisponível.');scanner=new Html5Qrcode('reader',{formatsToSupport:[Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.ITF,Html5QrcodeSupportedFormats.CODE_39],verbose:false});await scanner.start({facingMode:'environment'},{fps:12,qrbox:(w,h)=>({width:Math.floor(w*.94),height:Math.min(Math.floor(h*.5),180)})},texto=>{const chave=extrairChave(texto);if(/^\d{44}$/.test(chave)){consultar(chave);fecharCamera()}},()=>{});el('btnFechar').classList.remove('hidden');status('Câmera aberta. Aponte para o código de barras da DANFE.')}catch(e){status('Erro ao abrir câmera: '+(e.message||e));if(scanner){try{await scanner.clear()}catch(_){}scanner=null}}finally{iniciando=false;el('btnCamera').disabled=false}}
+let ultimaLeituraInvalida = '';
+let ultimoAvisoLeitura = 0;
+async function abrirCamera(){
+  if(scanner||iniciando||fechando)return;
+  iniciando=true;
+  el('btnCamera').disabled=true;
+  try{
+    if(typeof Html5Qrcode==='undefined')throw Error('Biblioteca da câmera indisponível.');
+    scanner=new Html5Qrcode('reader',{
+      formatsToSupport:[
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.CODABAR
+      ],
+      verbose:false,
+      useBarCodeDetectorIfSupported:true
+    });
+    const aoLer=(texto)=>{
+      const chave=extrairChave(texto);
+      if(/^\d{44}$/.test(chave)){
+        // Evita múltiplas consultas quando o mesmo código permanece diante da câmera.
+        if(fechando)return;
+        status('Chave de 44 dígitos reconhecida. Consultando XML...');
+        consultar(chave);
+        fecharCamera();
+      }else{
+        const agora=Date.now();
+        if(texto!==ultimaLeituraInvalida||agora-ultimoAvisoLeitura>5000){
+          ultimaLeituraInvalida=texto;
+          ultimoAvisoLeitura=agora;
+          status('Código reconhecido, mas não é uma chave de DANFE com 44 dígitos ('+chave.length+' dígitos). Aponte para o código principal da nota.');
+        }
+      }
+    };
+    const opcoes={
+      fps:15,
+      qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.96)),height:Math.max(1,Math.min(Math.floor(h*.55),220))}),
+      disableFlip:true,
+      videoConstraints:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}
+    };
+    try{
+      await scanner.start({facingMode:'environment'},opcoes,aoLer,()=>{});
+    }catch(primeiroErro){
+      // Alguns iPhones não aceitam a resolução solicitada: tenta novamente sem restrições.
+      await scanner.start({facingMode:'environment'},
+        {fps:12,qrbox:(w,h)=>({width:Math.max(1,Math.floor(w*.94)),height:Math.max(1,Math.min(Math.floor(h*.5),180))})},
+        aoLer,()=>{});
+    }
+    el('btnFechar').classList.remove('hidden');
+    status('Câmera aberta. Aproxime a DANFE, mantenha todas as barras no quadro e evite reflexos.');
+  }catch(e){
+    status('Erro ao abrir câmera: '+(e.message||e));
+    if(scanner){try{await scanner.clear()}catch(_){}scanner=null}
+  }finally{
+    iniciando=false;
+    el('btnCamera').disabled=false;
+  }
+}
 async function fecharCamera(){if(!scanner||fechando)return;fechando=true;try{await scanner.stop();await scanner.clear()}catch(e){}finally{scanner=null;fechando=false;el('btnFechar').classList.add('hidden')}}
 async function abrirFinalizacao(){if(!el('transportadora').value.trim()){alert('Informe a transportadora.');return}if(!notas.length){alert('Adicione pelo menos uma nota fiscal.');return}if(scanner)await fecharCamera();el('resumoFinal').textContent=el('transportadora').value.trim()+' · '+notas.length+' nota(s) · '+notas.reduce((s,n)=>s+n.volumes,0)+' volume(s)';el('listaFinal').replaceChildren();notas.forEach(n=>{const p=document.createElement('p');p.textContent='NF '+n.numero+' — '+n.cliente+' — '+n.volumes+' volume(s)';el('listaFinal').append(p)});el('etapaLeitura').classList.add('hidden');el('etapaFinal').classList.remove('hidden');configurarCanvas();window.scrollTo(0,0)}
 function voltarLeitura(){el('etapaFinal').classList.add('hidden');el('etapaLeitura').classList.remove('hidden');window.scrollTo(0,0)}
@@ -93,4 +151,3 @@ function enviarColeta(){
   el('formEnvio').submit();
 }
 </script></body></html>
-
