@@ -5,7 +5,7 @@ export async function iniciarLeitor(elemento, licenca, aoLer) {
   if (!configurado) {
     await configure({
       licenseKey: licenca,
-      libraryLocation: 'https://cdn.jsdelivr.net/npm/@scandit/web-datacapture-core@7.6.0/sdc-lib/',
+      libraryLocation: new URL('./assets/sdc-lib/', window.location.href).href,
       moduleLoaders: [barcodeCaptureLoader()]
     });
     configurado = true;
