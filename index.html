@@ -86,6 +86,24 @@ function renderizar(){el('totalNotas').textContent=notas.length;el('totalVolumes
 let leituraConcluida=false;
 let scanditSessao=null;
 let chaveLicencaSessao='';
+function detalharErroScandit(erro){
+  try {
+    if(erro===null||erro===undefined)return String(erro);
+    if(typeof erro==='string')return erro;
+    const vistos=new WeakSet();
+    const dados=JSON.stringify(erro,(chave,valor)=>{
+      if(typeof valor==='object'&&valor!==null){
+        if(vistos.has(valor))return '[referência circular]';
+        vistos.add(valor);
+        if(valor instanceof Error)return {name:valor.name,message:valor.message,stack:valor.stack,cause:valor.cause};
+      }
+      return valor;
+    },2);
+    const campos=['name','message','code','type','details','reason','cause','stack'];
+    const partes=campos.filter(c=>erro[c]!==undefined).map(c=>c+': '+(typeof erro[c]==='object'?JSON.stringify(erro[c]):String(erro[c])));
+    return (partes.join(' | ')||dados||String(erro)).slice(0,3000);
+  }catch(e){return 'Erro não serializável: '+String(erro)}
+}
 async function abrirCamera(){
   if(iniciando||fechando||scanditSessao)return;
   iniciando=true;leituraConcluida=false;el('btnCamera').disabled=true;
@@ -114,7 +132,8 @@ async function abrirCamera(){
     el('btnFechar').classList.remove('hidden');
     status('Câmera aberta. Aponte para o código de barras da DANFE.');
   }catch(e){
-    const detalhe=e?.message||e?.toString?.()||JSON.stringify(e);
+    const detalhe=detalharErroScandit(e);
+    console.error('Scandit: falha em '+etapa,e);
     status('Erro na etapa '+etapa+': '+detalhe+'. Se persistir, envie este texto.');
     if(scanditSessao)await fecharCamera();
   }finally{iniciando=false;el('btnCamera').disabled=false}
